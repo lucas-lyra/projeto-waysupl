@@ -7,8 +7,9 @@ import pandas as pd
 import streamlit as st
 from supabase import create_client, Client
 
-SUPABASE_URL = st.secrets["https://fxxcolcekzwzoofrvmom.supabase.co"]
-SUPABASE_KEY = st.secrets["sb_publishable_O0ujWJN4ECb6SdeVRAqN-g_xEb2qZJ1"]
+
+SUPABASE_URL = st.secrets["SUPABASE_URL"]
+SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
 
 @st.cache_resource
 def get_supabase() -> Client:
