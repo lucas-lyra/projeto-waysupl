@@ -7,11 +7,8 @@ import streamlit as st
 from supabase import create_client, Client
 
 # --- 1. CONEXÃO COM O SUPABASE ---
-# As chaves devem estar no "Secrets" do Streamlit Cloud exatamente com esses nomes
 SUPABASE_URL = st.secrets["SUPABASE_URL"]
 SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
-
-# Criamos o cliente global para uso em todas as funções
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 # --- 2. CONFIGURAÇÕES VISUAIS ---
@@ -41,7 +38,7 @@ def gerenciar_login():
                     st.session_state.user = res.user
                     st.rerun()
                 except Exception:
-                    st.error("Credenciais inválidas. Verifique seu email e senha no Supabase.")
+                    st.error("Credenciais inválidas.")
         st.stop()
     
     if st.sidebar.button("🚪 Sair do Sistema"):
@@ -49,7 +46,7 @@ def gerenciar_login():
         st.session_state.user = None
         st.rerun()
 
-# --- 4. FUNÇÕES DE DADOS ---
+# --- 4. FUNÇÕES DE DADOS (FILIAIS E PRODUTOS) ---
 
 def carregar_filiais():
     try:
@@ -58,16 +55,32 @@ def carregar_filiais():
     except:
         return [FILIAL_PADRAO]
 
+def adicionar_filial(nome: str):
+    nome = nome.strip()
+    if nome:
+        try:
+            supabase.table("filiais").insert({"nome": nome}).execute()
+            st.success(f"Filial '{nome}' cadastrada!")
+            return True
+        except:
+            st.error("Erro ao cadastrar filial.")
+    return False
+
+def excluir_filial(nome: str):
+    try:
+        supabase.table("filiais").delete().eq("nome", nome).execute()
+        st.warning(f"Filial '{nome}' removida!")
+        return True
+    except Exception as e:
+        st.error(f"Erro ao excluir: {e}")
+    return False
+
 def adicionar_produto(filial, codigo, nome, marca, validade, quantidade, observacoes):
     try:
-        # Busca ID da filial selecionada
         res_f = supabase.table("filiais").select("id").eq("nome", filial).single().execute()
-        if not res_f.data:
-            st.error("Filial não encontrada no banco.")
-            return
-        
         f_id = res_f.data["id"]
         
+        # Salvamos a data como string ISO para o banco, mas a exibição trataremos depois
         supabase.table("produtos").insert({
             "filial_id": f_id,
             "codigo_barras": str(codigo),
@@ -88,13 +101,22 @@ def carregar_estoque_completo():
     
     dados = []
     for p in res.data:
+        # Formatação da data para o padrão Brasileiro (DD/MM/YYYY)
+        data_formatada = ""
+        if p.get("validade"):
+            try:
+                dt = datetime.strptime(p["validade"], "%Y-%m-%d")
+                data_formatada = dt.strftime("%d/%m/%Y")
+            except:
+                data_formatada = p["validade"]
+
         dados.append({
             "id": p["id"],
             "Filial": p["filiais"]["nome"] if p.get("filiais") else "N/A",
             "Código de Barras": p["codigo_barras"],
             "Nome": p["nome"],
             "Marca": p["marca"],
-            "Validade": p["validade"],
+            "Validade": data_formatada,
             "Quantidade": p["quantidade"],
             "Observações": p["observacoes"]
         })
@@ -104,96 +126,66 @@ def carregar_estoque_completo():
 
 def _obter_base64(caminho):
     if caminho.exists():
-        try:
-            with open(caminho, "rb") as f:
-                return base64.b64encode(f.read()).decode()
-        except: pass
-    return None
-
-def _obter_logo_base64():
-    if CAMINHO_LOGO.exists():
-        try:
-            with open(CAMINHO_LOGO, "rb") as f:
-                return base64.b64encode(f.read()).decode()
-        except: pass
+        with open(caminho, "rb") as f:
+            return base64.b64encode(f.read()).decode()
     return None
 
 def _injetar_estilo():
     fundo_b64 = _obter_base64(CAMINHO_FUNDO)
-    
-    estilo_customizado = f"""
+    estilo = f"""
     <style>
-    /* 1. Imagem de Fundo com Sobreposição Escura */
     [data-testid="stAppViewContainer"] {{
         background-image: url("data:image/png;base64,{fundo_b64 if fundo_b64 else ''}");
-        background-size: cover;
-        background-position: center;
-        background-repeat: no-repeat;
-        background-attachment: fixed;
+        background-size: cover; background-attachment: fixed;
     }}
-    
     [data-testid="stAppViewContainer"]::before {{
-        content: "";
-        position: fixed;
-        top: 0; left: 0; width: 100%; height: 100%;
-        background-color: rgba(14, 17, 23, 0.85);
-        z-index: -1;
+        content: ""; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+        background-color: rgba(14, 17, 23, 0.85); z-index: -1;
     }}
-
-    /* 2. Estilização dos Textos */
-    .stMarkdown, h1, h2, h3, label, .stMetric {{
-        color: #FAFAFA !important;
-        text-shadow: 1px 1px 3px rgba(0,0,0,1);
-    }}
-
-    /* 3. Botão Vermelho (Cor da Way Suplementos) */
-    .stButton > button {{
-        background-color: {COR_MARCA} !important;
-        color: white !important;
-        border: none !important;
-        width: 100%;
-        border-radius: 5px;
-        transition: 0.3s;
-    }}
-    
-    .stButton > button:hover {{
-        background-color: #ff1f3d !important;
-        transform: scale(1.02);
-    }}
-
-    /* 4. Cards (Métricas e Tabelas) */
+    .stButton > button {{ background-color: {COR_MARCA} !important; color: white !important; }}
     [data-testid="stMetric"], .stDataFrame, [data-testid="stExpander"] {{
-        background-color: rgba(20, 20, 25, 0.8) !important;
-        border: 1px solid rgba(255,255,255,0.1);
-        border-radius: 10px;
-        padding: 15px;
+        background-color: rgba(20, 20, 25, 0.8) !important; border-radius: 10px;
     }}
     </style>
     """
-    st.markdown(estilo_customizado, unsafe_allow_html=True)
+    st.markdown(estilo, unsafe_allow_html=True)
 
-# --- 6. FUNÇÃO PRINCIPAL ---
+# --- 6. EXECUÇÃO PRINCIPAL ---
 
 def main():
     st.set_page_config(page_title="Way Suplementos", page_icon="📦", layout="wide")
     _injetar_estilo()
-    
     gerenciar_login()
 
     st.title("📦 CONTROLE DE ESTOQUE")
     
     filiais = carregar_filiais()
-    
+
+    # --- BARRA LATERAL (FILIAIS) ---
     with st.sidebar:
-        logo_b64 = _obter_logo_base64()
+        logo_b64 = _obter_base64(CAMINHO_LOGO)
         if logo_b64:
-            st.markdown(f'<div style="text-align:center; margin-bottom:1.5rem;"><img src="data:image/png;base64,{logo_b64}" style="max-height:80px;" /></div>', unsafe_allow_html=True)
+            st.markdown(f'<div style="text-align:center;"><img src="data:image/png;base64,{logo_b64}" style="max-height:80px;" /></div>', unsafe_allow_html=True)
         
         st.header("🏪 Unidade")
-        filial_selecionada = st.sidebar.selectbox("🏪 Unidade", options=filiais)
+        filial_selecionada = st.selectbox("Selecionar filial", options=filiais)
 
-    st.caption(f"Filial: **{filial_selecionada}** | Logado como: {st.session_state.user.email}")
+        with st.expander("⚙️ Gerenciar Filiais"):
+            # Adicionar Filial
+            nova_f = st.text_input("Nova Filial")
+            if st.button("➕ Adicionar"):
+                if adicionar_filial(nova_f): st.rerun()
+            
+            st.divider()
+            
+            # Excluir Filial
+            f_excluir = st.selectbox("Excluir Filial", options=filiais)
+            if st.button("🗑️ Remover"):
+                if excluir_filial(f_excluir): st.rerun()
 
+    st.caption(f"Filial: **{filial_selecionada}** | Usuário: {st.session_state.user.email}")
+
+    # --- FORMULÁRIO DE PRODUTO ---
     with st.expander("➕ Novo Lançamento", expanded=True):
         with st.form("add_form", clear_on_submit=True):
             col1, col2 = st.columns(2)
@@ -201,13 +193,14 @@ def main():
             nom = col2.text_input("Nome do Produto")
             mar = st.text_input("Marca")
             col3, col4 = st.columns(2)
-            val = col3.date_input("Validade")
+            val = col3.date_input("Validade", format="DD/MM/YYYY") # Input já em formato BR
             qtd = col4.number_input("Quantidade", min_value=1)
             obs = st.text_area("Observações")
             if st.form_submit_button("Salvar no Sistema"):
                 adicionar_produto(filial_selecionada, cod, nom, mar, val, qtd, obs)
                 st.rerun()
 
+    # --- TABELA DE ESTOQUE ---
     df = carregar_estoque_completo()
     df_f = df[df["Filial"] == filial_selecionada]
     
