@@ -79,36 +79,42 @@ def excluir_filial(nome: str):
     return False
 
 def adicionar_produto(filial, codigo, nome, marca, validade, quantidade, observacoes):
+   
+    status = st.empty()
+    status.warning("Processando salvamento...")
+    
     try:
-        # 1. Busca o ID da filial com erro tratado
+        
         res_f = supabase.table("filiais").select("id").eq("nome", filial).execute()
         
         if not res_f.data:
-            st.error(f"Erro: A filial '{filial}' não existe no banco de dados.")
+            st.error(f"Filial '{filial}' não encontrada no banco!")
             return
-        
+
         f_id = res_f.data[0]["id"]
         
-        # 2. Tenta inserir o produto
-        data_insert = {
+       
+        dados = {
             "filial_id": f_id,
             "codigo_barras": str(codigo),
             "nome": str(nome),
             "marca": str(marca),
-            "validade": str(validade), # Formato ISO YYYY-MM-DD
+            "validade": str(validade),
             "quantidade": int(quantidade),
             "observacoes": str(observacoes)
         }
         
-        response = supabase.table("produtos").insert(data_insert).execute()
+        res = supabase.table("produtos").insert(dados).execute()
         
-        if response.data:
-            st.success("✅ Produto salvo com sucesso no banco de dados!")
+        if res.data:
+            status.success("✅ SALVO COM SUCESSO!")
+           
+            import time
+            time.sleep(1)
             st.rerun()
             
     except Exception as e:
-        # Isso vai mostrar o erro real (ex: coluna faltando, erro de permissão)
-        st.error(f"❌ Erro crítico do Supabase: {str(e)}")
+        status.error(f"Erro ao salvar: {str(e)}")
 
 def carregar_estoque_completo():
     try:
