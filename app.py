@@ -80,27 +80,35 @@ def excluir_filial(nome: str):
 
 def adicionar_produto(filial, codigo, nome, marca, validade, quantidade, observacoes):
     try:
-        # Busca ID da filial pelo nome
-        res_f = supabase.table("filiais").select("id").eq("nome", filial).single().execute()
+        # 1. Busca o ID da filial com erro tratado
+        res_f = supabase.table("filiais").select("id").eq("nome", filial).execute()
+        
         if not res_f.data:
-            st.error("Filial não encontrada no banco de dados.")
+            st.error(f"Erro: A filial '{filial}' não existe no banco de dados.")
             return
         
-        f_id = res_f.data["id"]
+        f_id = res_f.data[0]["id"]
         
-        # O banco salva em YYYY-MM-DD, o Streamlit fornece o objeto date corretamente
-        supabase.table("produtos").insert({
+        # 2. Tenta inserir o produto
+        data_insert = {
             "filial_id": f_id,
             "codigo_barras": str(codigo),
             "nome": str(nome),
             "marca": str(marca),
-            "validade": str(validade), # ISO format para o banco
+            "validade": str(validade), # Formato ISO YYYY-MM-DD
             "quantidade": int(quantidade),
             "observacoes": str(observacoes)
-        }).execute()
-        st.success("Produto adicionado ao estoque!")
+        }
+        
+        response = supabase.table("produtos").insert(data_insert).execute()
+        
+        if response.data:
+            st.success("✅ Produto salvo com sucesso no banco de dados!")
+            st.rerun()
+            
     except Exception as e:
-        st.error(f"Falha ao salvar produto: {e}")
+        # Isso vai mostrar o erro real (ex: coluna faltando, erro de permissão)
+        st.error(f"❌ Erro crítico do Supabase: {str(e)}")
 
 def carregar_estoque_completo():
     try:
